@@ -15,6 +15,7 @@ export const GAME_STATUS = {
   PLAYING: 'playing',
   CHECK: 'check',
   CHECKMATE: 'checkmate',
+  KING_CAPTURE: 'kingCapture',
   STALEMATE: 'stalemate',
   DRAW: 'draw',
 }
@@ -90,6 +91,7 @@ export function useRPSChess() {
 
   // ── Move rights ──
   const [moveGrantedTo, setMoveGrantedTo] = useState(null)
+  const [kingCapturedBy, setKingCapturedBy] = useState(null)
 
   // ── Streaks (consecutive RPS wins without the other player winning) ──
   const [consecutiveWins, setConsecutiveWins] = useState({ w: 0, b: 0 })
@@ -113,15 +115,25 @@ export function useRPSChess() {
   const drawReason = useMemo(() => getDrawReason(game), [game])
 
   const gameStatus = useMemo(() => {
+    if (kingCapturedBy) return GAME_STATUS.KING_CAPTURE
     if (game.isCheckmate()) return GAME_STATUS.CHECKMATE
     if (game.isStalemate()) return GAME_STATUS.STALEMATE
     if (game.isDraw()) return GAME_STATUS.DRAW
     if (game.isCheck()) return GAME_STATUS.CHECK
     return GAME_STATUS.PLAYING
-  }, [game])
+  }, [game, kingCapturedBy])
+
+  const winningColor = useMemo(() => {
+    if (kingCapturedBy) return kingCapturedBy
+    if (gameStatus === GAME_STATUS.CHECKMATE) {
+      return chessTurn === 'w' ? 'b' : 'w'
+    }
+    return null
+  }, [kingCapturedBy, gameStatus, chessTurn])
 
   const isGameOver = useMemo(
     () =>
+      gameStatus === GAME_STATUS.KING_CAPTURE ||
       gameStatus === GAME_STATUS.CHECKMATE ||
       gameStatus === GAME_STATUS.STALEMATE ||
       gameStatus === GAME_STATUS.DRAW,
@@ -129,7 +141,11 @@ export function useRPSChess() {
   )
 
   const statusLabel = useMemo(() => {
+    const activeMoveColor = moveGrantedTo === 'w' ? 'White' : 'Black'
+
     switch (gameStatus) {
+      case GAME_STATUS.KING_CAPTURE:
+        return `King captured — ${winningColor === 'w' ? 'White' : 'Black'} wins`
       case GAME_STATUS.CHECKMATE: {
         const winner = chessTurn === 'w' ? 'Black' : 'White'
         return `Checkmate — ${winner} wins`
@@ -148,11 +164,17 @@ export function useRPSChess() {
         }
         return 'Draw'
       case GAME_STATUS.CHECK:
+        if (rpsPhase === RPS_PHASE.AWAITING_CHESS_MOVE && moveGrantedTo) {
+          return `${activeMoveColor} to move`
+        }
         return `${chessTurn === 'w' ? 'White' : 'Black'} is in check`
       default:
-        return `${chessTurn === 'w' ? 'White' : 'Black'} to move`
+        if (rpsPhase === RPS_PHASE.AWAITING_CHESS_MOVE && moveGrantedTo) {
+          return `${activeMoveColor} to move`
+        }
+        return 'Win RPS to earn the next move'
     }
-  }, [gameStatus, chessTurn, drawReason])
+  }, [gameStatus, chessTurn, drawReason, rpsPhase, moveGrantedTo, winningColor])
 
   // ── submitRPSChoice ──
   const submitRPSChoice = useCallback(
@@ -218,6 +240,8 @@ export function useRPSChess() {
       )
       if (!move) return false
 
+      const capturedKing = move.captured === 'k'
+
       // Track the move
       setMoveHistory((prev) => [
         ...prev,
@@ -234,6 +258,9 @@ export function useRPSChess() {
 
       // Persist new position
       setGame(gameCopy)
+      if (capturedKing) {
+        setKingCapturedBy(moveGrantedTo)
+      }
 
       // Start fresh RPS round
       setPlayerAPick(null)
@@ -256,6 +283,7 @@ export function useRPSChess() {
     setPlayerBPick(null)
     setRpsResult(null)
     setMoveGrantedTo(null)
+    setKingCapturedBy(null)
     setConsecutiveWins({ w: 0, b: 0 })
     setTotalRPSWins({ w: 0, b: 0 })
     setMoveHistory([])
@@ -269,6 +297,7 @@ export function useRPSChess() {
     fen: game.fen(),
     chessTurn,
     gameStatus,
+    winningColor,
     drawReason,
     statusLabel,
     isGameOver,

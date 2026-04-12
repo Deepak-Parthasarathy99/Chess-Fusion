@@ -64,6 +64,7 @@ function App() {
     fen,
     chessTurn,
     gameStatus,
+    winningColor,
     drawReason,
     statusLabel,
     isGameOver,
@@ -375,6 +376,7 @@ function App() {
             gameStatus={gameStatus}
             drawReason={drawReason}
             chessTurn={chessTurn}
+            winningColor={winningColor}
             onRestart={handleRestart}
           />
 

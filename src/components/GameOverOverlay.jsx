@@ -60,13 +60,18 @@ function getDrawCopy(drawReason) {
   }
 }
 
-export function GameOverOverlay({ isGameOver, gameStatus, drawReason, chessTurn, onRestart }) {
+export function GameOverOverlay({ isGameOver, gameStatus, drawReason, chessTurn, winningColor, onRestart }) {
   // chessTurn = the side whose turn it is = the side that's been mated/staled
   let title = ''
   let subtitle = ''
   let icon = ''
 
-  if (gameStatus === 'checkmate') {
+  if (gameStatus === 'kingCapture') {
+    const winner = winningColor === 'w' ? 'White' : 'Black'
+    title = 'King Captured'
+    subtitle = `${winner} wins immediately`
+    icon = winningColor === 'w' ? '♔' : '♚'
+  } else if (gameStatus === 'checkmate') {
     const winner = chessTurn === 'w' ? 'Black' : 'White'
     title = 'Checkmate'
     subtitle = `${winner} wins the game`
