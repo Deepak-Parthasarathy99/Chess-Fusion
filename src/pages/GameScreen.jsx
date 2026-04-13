@@ -309,6 +309,7 @@ function GameInner({
     () => ({
       id: 'rps-chess-board',
       position: fen,
+      boardOrientation: player?.color === 'b' ? 'black' : 'white',
       onPieceDrop: onDrop,
       onSquareClick,
       onSquareRightClick,
@@ -322,7 +323,7 @@ function GameInner({
       dropSquareStyle: { boxShadow: 'inset 0 0 1px 6px rgba(201,168,76,0.4)' },
       animationDurationInMs: 200,
     }),
-    [fen, onDrop, onSquareClick, onSquareRightClick, onPieceClick, onPieceDrag, canDragPiece, customSquareStyles]
+    [fen, player, onDrop, onSquareClick, onSquareRightClick, onPieceClick, onPieceDrag, canDragPiece, customSquareStyles]
   )
 
   return (
