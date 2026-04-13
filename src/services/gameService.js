@@ -1,4 +1,4 @@
-import { db } from '../firebase'
+import { db, ensureFirebaseSession } from '../firebase'
 import {
   ref,
   set,
@@ -7,6 +7,31 @@ import {
   onValue,
   serverTimestamp,
 } from 'firebase/database'
+
+function normalizeFirebaseError(error) {
+  if (!error?.code) return error?.message || 'Firebase request failed.'
+
+  switch (error.code) {
+    case 'PERMISSION_DENIED':
+    case 'permission-denied':
+      return 'Permission denied. Check your Realtime Database rules, and if they require signed-in users, enable Anonymous Auth in Firebase Authentication.'
+    case 'auth/operation-not-allowed':
+      return 'Anonymous sign-in is disabled in Firebase Authentication. Enable Anonymous Auth in the Firebase console and try again.'
+    case 'auth/api-key-not-valid':
+      return 'Firebase API key is invalid. Re-check your Vite env configuration.'
+    default:
+      return error.message || 'Firebase request failed.'
+  }
+}
+
+async function withFirebaseSession(action) {
+  try {
+    await ensureFirebaseSession()
+    return await action()
+  } catch (error) {
+    throw new Error(normalizeFirebaseError(error))
+  }
+}
 
 
 // ─── Initial game state schema ───────────────────────────────
@@ -74,20 +99,22 @@ function generateRoomId() {
  * If the generated code collides (unlikely), retries once.
  */
 export async function createGame(playerName) {
-  const roomId = generateRoomId()
-  const gameRef = ref(db, `games/${roomId}`)
+  return withFirebaseSession(async () => {
+    const roomId = generateRoomId()
+    const gameRef = ref(db, `games/${roomId}`)
 
-  // Check for collision (very unlikely with 6 alphanumeric chars)
-  const snapshot = await get(gameRef)
-  if (snapshot.exists()) {
-    // Retry with a different code
-    return createGame(playerName)
-  }
+    // Check for collision (very unlikely with 6 alphanumeric chars)
+    const snapshot = await get(gameRef)
+    if (snapshot.exists()) {
+      // Retry with a different code
+      return createGame(playerName)
+    }
 
-  const initialState = createInitialGameState(playerName)
-  await set(gameRef, initialState)
+    const initialState = createInitialGameState(playerName)
+    await set(gameRef, initialState)
 
-  return roomId
+    return roomId
+  })
 }
 
 // ─── joinGame ────────────────────────────────────────────────
@@ -104,49 +131,42 @@ export async function createGame(playerName) {
  * @throws {Error} if room doesn't exist or is already full.
  */
 export async function joinGame(roomId, playerName) {
-  const gameRef = ref(db, `games/${roomId}`)
+  return withFirebaseSession(async () => {
+    const gameRef = ref(db, `games/${roomId}`)
 
-  // Verify the room exists
-  const snapshot = await get(gameRef)
-  if (!snapshot.exists()) {
-    throw new Error(`Room "${roomId}" does not exist.`)
-  }
+    // Verify the room exists
+    const snapshot = await get(gameRef)
+    if (!snapshot.exists()) {
+      throw new Error(`Room "${roomId}" does not exist.`)
+    }
 
-  const gameData = snapshot.val()
+    const gameData = snapshot.val()
 
-  // Prevent joining a full room
-  if (gameData.playerB !== null) {
-    throw new Error(`Room "${roomId}" is already full.`)
-  }
+    // Prevent joining a full room
+    if (gameData.playerB !== null) {
+      throw new Error(`Room "${roomId}" is already full.`)
+    }
 
-  // Write Player B's info + update timestamp
-  await update(gameRef, {
-    playerB: {
-      name: playerName,
-      color: 'b',
-    },
-    lastUpdated: serverTimestamp(),
+    // Write Player B's info + update timestamp
+    await update(gameRef, {
+      playerB: {
+        name: playerName,
+        color: 'b',
+      },
+      lastUpdated: serverTimestamp(),
+    })
+
+    return {
+      subscribe(callback) {
+        return onValue(gameRef, (snap) => {
+          if (snap.exists()) {
+            callback(snap.val())
+          }
+        })
+      },
+      gameRef,
+    }
   })
-
-  // Return a real-time listener
-  // The caller supplies a callback via the returned subscribe function
-  return {
-    /**
-     * Subscribe to real-time game state changes.
-     * @param {(gameState: object) => void} callback
-     * @returns {Function} unsubscribe
-     */
-    subscribe(callback) {
-      return onValue(gameRef, (snap) => {
-        if (snap.exists()) {
-          callback(snap.val())
-        }
-      })
-    },
-
-    /** The room reference for direct updates */
-    gameRef,
-  }
 }
 
 // ─── subscribeToGame ─────────────────────────────────────────
@@ -160,12 +180,20 @@ export async function joinGame(roomId, playerName) {
  * @returns {Function} unsubscribe
  */
 export function subscribeToGame(roomId, callback) {
-  const gameRef = ref(db, `games/${roomId}`)
-  return onValue(gameRef, (snap) => {
-    if (snap.exists()) {
-      callback(snap.val())
-    }
+  let unsubscribe = () => {}
+
+  withFirebaseSession(async () => {
+    const gameRef = ref(db, `games/${roomId}`)
+    unsubscribe = onValue(gameRef, (snap) => {
+      if (snap.exists()) {
+        callback(snap.val())
+      }
+    })
+  }).catch((error) => {
+    console.error('Failed to subscribe to game:', error)
   })
+
+  return () => unsubscribe()
 }
 
 // ─── updateGameState ─────────────────────────────────────────
@@ -177,9 +205,11 @@ export function subscribeToGame(roomId, callback) {
  * @returns {Promise<void>}
  */
 export async function updateGameState(roomId, updates) {
-  const gameRef = ref(db, `games/${roomId}`)
-  await update(gameRef, {
-    ...updates,
-    lastUpdated: serverTimestamp(),
+  return withFirebaseSession(async () => {
+    const gameRef = ref(db, `games/${roomId}`)
+    await update(gameRef, {
+      ...updates,
+      lastUpdated: serverTimestamp(),
+    })
   })
 }

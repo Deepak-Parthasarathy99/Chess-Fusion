@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app'
 import { getDatabase } from 'firebase/database'
+import { getAuth, signInAnonymously } from 'firebase/auth'
 
 // ─── Firebase configuration ─────────────────────────────────
 // Replace these placeholder values with your actual Firebase
@@ -17,5 +18,20 @@ const firebaseConfig = {
 // ─── Initialize ──────────────────────────────────────────────
 const app = initializeApp(firebaseConfig)
 const db = getDatabase(app)
+const auth = getAuth(app)
 
-export { app, db }
+let authPromise = null
+
+export function ensureFirebaseSession() {
+  if (auth.currentUser) return Promise.resolve(auth.currentUser)
+  if (!authPromise) {
+    authPromise = signInAnonymously(auth)
+      .then((credential) => credential.user)
+      .finally(() => {
+        authPromise = null
+      })
+  }
+  return authPromise
+}
+
+export { app, db, auth }

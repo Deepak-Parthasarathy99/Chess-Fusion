@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Chess } from 'chess.js'
 import { ref, onValue, update, serverTimestamp } from 'firebase/database'
-import { db } from '../firebase'
+import { db, ensureFirebaseSession } from '../firebase'
 
 // ─── Re-export constants (same as local hook) ────────────────
 export const RPS_CHOICES = ['rock', 'paper', 'scissors']
@@ -110,8 +110,6 @@ const safeArr = (val) => (Array.isArray(val) ? val : [])
  * real-time `onValue` listener.
  */
 export function useOnlineRPSChess(roomId, identity) {
-  const myColor = identity === 'A' ? 'w' : 'b'
-
   // ── Raw Firebase state ──
   const [fb, setFb] = useState(null)
   const [connected, setConnected] = useState(false)
@@ -120,26 +118,52 @@ export function useOnlineRPSChess(roomId, identity) {
   // ── Subscribe once ──
   useEffect(() => {
     if (!roomId) return
-    const dbRef = ref(db, `games/${roomId}`)
-    gameRefObj.current = dbRef
+    let unsubscribe = () => {}
+    let cancelled = false
 
-    const unsubscribe = onValue(dbRef, (snap) => {
-      if (snap.exists()) {
-        setFb(snap.val())
-        setConnected(true)
-      }
-    })
-    return () => { unsubscribe(); gameRefObj.current = null }
+    ensureFirebaseSession()
+      .then(() => {
+        if (cancelled) return
+
+        const dbRef = ref(db, `games/${roomId}`)
+        gameRefObj.current = dbRef
+
+        unsubscribe = onValue(
+          dbRef,
+          (snap) => {
+            if (snap.exists()) {
+              setFb(snap.val())
+              setConnected(true)
+            }
+          },
+          (error) => {
+            console.error('Failed to subscribe to online game:', error)
+            setConnected(false)
+          }
+        )
+      })
+      .catch((error) => {
+        console.error('Failed to establish Firebase session:', error)
+        setConnected(false)
+      })
+
+    return () => {
+      cancelled = true
+      unsubscribe()
+      gameRefObj.current = null
+    }
   }, [roomId])
 
   // ── Helper: write to Firebase ──
   const write = useCallback(
     (updates) => {
       if (!gameRefObj.current) return Promise.resolve()
-      return update(gameRefObj.current, {
-        ...updates,
-        lastUpdated: serverTimestamp(),
-      })
+      return ensureFirebaseSession().then(() =>
+        update(gameRefObj.current, {
+          ...updates,
+          lastUpdated: serverTimestamp(),
+        })
+      )
     },
     []
   )
@@ -169,12 +193,12 @@ export function useOnlineRPSChess(roomId, identity) {
     if (!fb?.playerAChoice) return null
     // Player A always sees their own pick; Player B only after reveal
     return (identity === 'A' || bothPicked) ? fb.playerAChoice : null
-  }, [fb?.playerAChoice, identity, bothPicked])
+  }, [fb, identity, bothPicked])
 
   const playerBPick = useMemo(() => {
     if (!fb?.playerBChoice) return null
     return (identity === 'B' || bothPicked) ? fb.playerBChoice : null
-  }, [fb?.playerBChoice, identity, bothPicked])
+  }, [fb, identity, bothPicked])
 
   const rpsResult = fb?.rpsResult ?? null
   const moveGrantedTo = fb?.moveRights ?? null
