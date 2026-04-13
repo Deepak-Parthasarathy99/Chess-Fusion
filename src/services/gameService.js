@@ -145,7 +145,7 @@ export async function joinGame(roomId, playerName) {
     const gameData = snapshot.val()
 
     // Prevent joining a full room
-    if (gameData.playerB !== null) {
+    if (gameData.playerB != null) {
       throw new Error(`Room "${roomId}" is already full.`)
     }
 
