@@ -17,6 +17,8 @@ function normalizeFirebaseError(error) {
       return 'Permission denied. Check your Realtime Database rules, and if they require signed-in users, enable Anonymous Auth in Firebase Authentication.'
     case 'auth/operation-not-allowed':
       return 'Anonymous sign-in is disabled in Firebase Authentication. Enable Anonymous Auth in the Firebase console and try again.'
+    case 'auth/configuration-not-found':
+      return 'Firebase Authentication is not configured for this project yet. In Firebase Console, open Authentication, click Get started, and enable Anonymous sign-in if your database rules require auth.'
     case 'auth/api-key-not-valid':
       return 'Firebase API key is invalid. Re-check your Vite env configuration.'
     default:
@@ -26,7 +28,7 @@ function normalizeFirebaseError(error) {
 
 async function withFirebaseSession(action) {
   try {
-    await ensureFirebaseSession()
+    await ensureFirebaseSession({ optional: true })
     return await action()
   } catch (error) {
     throw new Error(normalizeFirebaseError(error))

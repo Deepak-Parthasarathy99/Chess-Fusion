@@ -121,7 +121,7 @@ export function useOnlineRPSChess(roomId, identity) {
     let unsubscribe = () => {}
     let cancelled = false
 
-    ensureFirebaseSession()
+    ensureFirebaseSession({ optional: true })
       .then(() => {
         if (cancelled) return
 
@@ -158,7 +158,7 @@ export function useOnlineRPSChess(roomId, identity) {
   const write = useCallback(
     (updates) => {
       if (!gameRefObj.current) return Promise.resolve()
-      return ensureFirebaseSession().then(() =>
+      return ensureFirebaseSession({ optional: true }).then(() =>
         update(gameRefObj.current, {
           ...updates,
           lastUpdated: serverTimestamp(),

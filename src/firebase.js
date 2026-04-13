@@ -21,12 +21,23 @@ const db = getDatabase(app)
 const auth = getAuth(app)
 
 let authPromise = null
+const OPTIONAL_AUTH_ERROR_CODES = new Set([
+  'auth/configuration-not-found',
+  'auth/operation-not-allowed',
+  'auth/admin-restricted-operation',
+])
 
-export function ensureFirebaseSession() {
+export function ensureFirebaseSession({ optional = true } = {}) {
   if (auth.currentUser) return Promise.resolve(auth.currentUser)
   if (!authPromise) {
     authPromise = signInAnonymously(auth)
       .then((credential) => credential.user)
+      .catch((error) => {
+        if (optional && OPTIONAL_AUTH_ERROR_CODES.has(error?.code)) {
+          return null
+        }
+        throw error
+      })
       .finally(() => {
         authPromise = null
       })
